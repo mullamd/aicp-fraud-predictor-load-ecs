@@ -1,0 +1,34 @@
+{
+  "family": "aicp-fraud-predictor-load-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::461512246753:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::461512246753:role/aicp-ecs-fraud-execution-role",
+  "containerDefinitions": [
+    {
+      "name": "aicp-fraud-predictor-load-container",
+      "image": "461512246753.dkr.ecr.us-east-1.amazonaws.com/aicp-fraud-predictor-load-container:latest",
+      "essential": true,
+      "environment": [
+        {
+          "name": "SAGEMAKER_ENDPOINT_NAME",
+          "value": "aicp-fraud-endpoint-1752473908"
+        },
+        {
+          "name": "REDSHIFT_TABLE",
+          "value": "auto_insurance_data.claims_processed"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/aicp-fraud-predictor-load-task",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
