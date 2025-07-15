@@ -1,61 +1,60 @@
-name: deploy
+name: Build, Push, and Run ECS Task
 
 on:
   push:
     branches: [main]
 
 jobs:
-  deploy-to-ecr:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
+    env:
+      AWS_REGION: us-east-1
+      CLUSTER: aicp-ecs-cluster
+      TASK_DEF: aicp-fraud-predictor-load-task
+      SUBNET_ID: subnet-02c673bb70ede8519            # Replace with your public subnet ID
+      SECURITY_GROUP_ID: sg-08cafba7e60d61975         # Replace with your ECS security group
+      CONTAINER_NAME: aicp-fraud-predictor-load-container
+
     steps:
-      - name: Checkout code
+      - name: ✅ Checkout Code
         uses: actions/checkout@v3
 
-      - name: Configure AWS credentials
+      - name: 🔐 Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        id: login-ecr
+      - name: 🐳 Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build, tag, and push image to Amazon ECR
+      - name: 🛠️ Build, Tag, and Push Docker image
         env:
-          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
-          ECR_REPOSITORY: aicp-fraud-predictor-load-container
+          ECR_REPO_URI: ${{ secrets.ECR_REPO_URI }}
         run: |
-          docker build -t $ECR_REPOSITORY .
-          docker tag $ECR_REPOSITORY:latest $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker build -t $ECR_REPO_URI .
+          docker push $ECR_REPO_URI
 
-      - name: Send email on success
-        if: success()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "✅ Docker Image Deployment Succeeded"
-          to: mm.cloudenginner@gmail.com
-          from: ${{ secrets.EMAIL_USERNAME }}
-          body: |
-            ✅ Your AICP Fraud Predictor Load container image has been successfully built and pushed to ECR.
-
-      - name: Send email on failure
-        if: failure()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "❌ Docker Image Deployment Failed"
-          to: mm.cloudenginner@gmail.com
-          from: ${{ secrets.EMAIL_USERNAME }}
-          body: |
-            ❌ Something went wrong during Docker build or ECR push. Please check the GitHub Actions workflow logs.
+      - name: 🚀 Run ECS Task with Claim Payload
+        run: |
+          aws ecs run-task \
+            --cluster $CLUSTER \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SECURITY_GROUP_ID],assignPublicIp=ENABLED}" \
+            --task-definition $TASK_DEF \
+            --overrides '{
+              "containerOverrides": [
+                {
+                  "name": "aicp-fraud-predictor-load-container",
+                  "environment": [
+                    {
+                      "name": "CLAIM_PAYLOAD",
+                      "value": "{\"claim_id\":\"CLM001\",\"policy_number\":\"PN1001\",\"claimant_name\":\"John Doe\",\"date_of_loss\":\"2025-07-01\",\"type_of_claim\":\"Collision\",\"accident_location\":\"New York, NY\",\"vehicle_make\":\"Toyota\",\"vehicle_model\":\"Camry\",\"vehicle_year\":2018,\"license_plate\":\"XYZ123\",\"description_of_damage\":\"Front bumper damage\",\"estimated_damage_cost\":2000.0,\"claim_amount_requested\":4800.0,\"is_valid\":true,\"textract_status\":\"SUCCEEDED\",\"dq_validation_status\":\"PASS\",\"claim_to_damage_ratio\":2.4,\"days_since_policy_start\":15,\"previous_claims_count\":1,\"location_risk_score\":3.7,\"vehicle_age\":7,\"incident_time\":\"08:00 AM\",\"processed_by\":\"ecs-auto\"}"
+                    }
+                  ]
+                }
+              ]
+            }' \
+            --region $AWS_REGION
