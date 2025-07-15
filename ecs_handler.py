@@ -42,8 +42,8 @@ except Exception as e:
 # 4. Connect to Redshift
 try:
     conn = psycopg2.connect(
-        dbname="dev",
-        host="your-redshift-cluster.cax5lwhmspd1.us-east-1.redshift.amazonaws.com",
+        dbname="aicp_insurance",
+        host="redshift-cluster-2.cax5lwhmspd1.us-east-1.redshift.amazonaws.com",
         port=5439,
         user="redshift_admin",
         password="347634M-ulla7710"
