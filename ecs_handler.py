@@ -30,7 +30,7 @@ except KeyError as e:
 try:
     sagemaker = boto3.client("sagemaker-runtime")
     response = sagemaker.invoke_endpoint(
-        EndpointName="aicp-fraud-endpoint-1752473908",  # ✅ Replace if needed
+        EndpointName="aicp-fraud-endpoint-1752473908",
         ContentType="application/json",
         Body=json.dumps(sm_payload)
     )
@@ -56,7 +56,7 @@ except Exception as e:
 # 5. Insert into Redshift
 try:
     cur.execute("""
-        INSERT INTO .public.claims_processed (
+        INSERT INTO public.claims_processed (
             claim_id, policy_number, claimant_name, date_of_loss,
             type_of_claim, accident_location, vehicle_make, vehicle_model,
             vehicle_year, license_plate, description_of_damage,
