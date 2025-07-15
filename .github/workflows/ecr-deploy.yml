@@ -13,7 +13,7 @@ jobs:
       CLUSTER: aicp-ecs-cluster
       TASK_DEF: aicp-fraud-predictor-load-task
       SUBNET_ID: subnet-02c673bb70ede8519            # Replace with your public subnet ID
-      SECURITY_GROUP_ID: sg-08cafba7e60d61975         # Replace with your ECS security group
+      SECURITY_GROUP_ID: sg-0446ae2a3834b378e         # Replace with your ECS security group
       CONTAINER_NAME: aicp-fraud-predictor-load-container
 
     steps:
