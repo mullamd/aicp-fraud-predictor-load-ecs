@@ -39,24 +39,53 @@ jobs:
 
       - name: 🚀 Run ECS Task with Claim Payload
         run: |
+          PAYLOAD=$(cat <<EOF
+          {
+            "claim_id": "CLM001",
+            "policy_number": "PN1001",
+            "claimant_name": "John Doe",
+            "date_of_loss": "2025-07-01",
+            "type_of_claim": "Collision",
+            "accident_location": "New York, NY",
+            "vehicle_make": "Toyota",
+            "vehicle_model": "Camry",
+            "vehicle_year": 2018,
+            "license_plate": "XYZ123",
+            "description_of_damage": "Front bumper damage",
+            "estimated_damage_cost": 2000.0,
+            "claim_amount_requested": 4800.0,
+            "is_valid": true,
+            "textract_status": "SUCCEEDED",
+            "dq_validation_status": "PASS",
+            "claim_to_damage_ratio": 2.4,
+            "days_since_policy_start": 15,
+            "previous_claims_count": 1,
+            "location_risk_score": 3.7,
+            "vehicle_age": 7,
+            "incident_time": "08:00 AM",
+            "processed_by": "ecs-auto"
+          }
+          EOF
+          )
+
           aws ecs run-task \
             --cluster $CLUSTER \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SECURITY_GROUP_ID],assignPublicIp=ENABLED}" \
             --task-definition $TASK_DEF \
-            --overrides '{
-              "containerOverrides": [
+            --overrides "{
+              \"containerOverrides\": [
                 {
-                  "name": "aicp-fraud-predictor-load-container",
-                  "environment": [
+                  \"name\": \"${CONTAINER_NAME}\",
+                  \"environment\": [
                     {
-                      "name": "CLAIM_PAYLOAD",
-                      "value": "{\"claim_id\":\"CLM001\",\"policy_number\":\"PN1001\",\"claimant_name\":\"John Doe\",\"date_of_loss\":\"2025-07-01\",\"type_of_claim\":\"Collision\",\"accident_location\":\"New York, NY\",\"vehicle_make\":\"Toyota\",\"vehicle_model\":\"Camry\",\"vehicle_year\":2018,\"license_plate\":\"XYZ123\",\"description_of_damage\":\"Front bumper damage\",\"estimated_damage_cost\":2000.0,\"claim_amount_requested\":4800.0,\"is_valid\":true,\"textract_status\":\"SUCCEEDED\",\"dq_validation_status\":\"PASS\",\"claim_to_damage_ratio\":2.4,\"days_since_policy_start\":15,\"previous_claims_count\":1,\"location_risk_score\":3.7,\"vehicle_age\":7,\"incident_time\":\"08:00 AM\",\"processed_by\":\"ecs-auto\"}"
+                      \"name\": \"CLAIM_PAYLOAD\",
+                      \"value\": \"$PAYLOAD\"
                     }
                   ]
                 }
               ]
-            }' \
+            }" \
             --region $AWS_REGION
 
       - name: 📧 Send success email
@@ -71,7 +100,7 @@ jobs:
           to: mm.cloudenginner@gmail.com
           from: ${{ secrets.EMAIL_USERNAME }}
           body: |
-            🚀 Your AICP ECS task (fraud predictor and Redshift loader) ran successfully!
+            ✅ ECS task for fraud prediction + Redshift insertion completed successfully.
 
       - name: 📧 Send failure email
         if: failure()
@@ -85,4 +114,4 @@ jobs:
           to: mm.cloudenginner@gmail.com
           from: ${{ secrets.EMAIL_USERNAME }}
           body: |
-            ❌ The ECS Task failed during build, push, or execution. Please check the GitHub Actions logs.
+            ❌ ECS task failed during build, push, or execution. Please check GitHub Actions logs.
