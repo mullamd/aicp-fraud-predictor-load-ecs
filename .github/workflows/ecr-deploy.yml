@@ -12,8 +12,8 @@ jobs:
       AWS_REGION: us-east-1
       CLUSTER: aicp-ecs-cluster
       TASK_DEF: aicp-fraud-predictor-load-task
-      SUBNET_ID: subnet-02c673bb70ede8519            # Replace with your public subnet ID
-      SECURITY_GROUP_ID: sg-0446ae2a3834b378e         # Replace with your ECS security group
+      SUBNET_ID: subnet-02c673bb70ede8519
+      SECURITY_GROUP_ID: sg-0446ae2a3834b378e
       CONTAINER_NAME: aicp-fraud-predictor-load-container
 
     steps:
@@ -58,3 +58,31 @@ jobs:
               ]
             }' \
             --region $AWS_REGION
+
+      - name: 📧 Send success email
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "✅ AICP ECS Task Completed Successfully"
+          to: mm.cloudenginner@gmail.com
+          from: ${{ secrets.EMAIL_USERNAME }}
+          body: |
+            🚀 Your AICP ECS task (fraud predictor and Redshift loader) ran successfully!
+
+      - name: 📧 Send failure email
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "❌ AICP ECS Task Failed"
+          to: mm.cloudenginner@gmail.com
+          from: ${{ secrets.EMAIL_USERNAME }}
+          body: |
+            ❌ The ECS Task failed during build, push, or execution. Please check the GitHub Actions logs.
