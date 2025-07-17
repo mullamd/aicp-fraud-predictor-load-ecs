@@ -3,6 +3,10 @@ import json
 import boto3
 import psycopg2
 
+# 0. Setup SNS for Redshift monitoring
+sns = boto3.client('sns')
+sns_topic = 'arn:aws:sns:us-east-1:461512246753:aicp-redshift-status-topic'
+
 # 1. Read input from environment variable
 try:
     payload = os.environ.get("CLAIM_PAYLOAD")
@@ -99,10 +103,24 @@ try:
     ))
     conn.commit()
     print("✅ Inserted fraud result into Redshift.")
+
+    sns.publish(
+        TopicArn=sns_topic,
+        Subject="✅ Redshift Insert Succeeded",
+        Message=f"Claim ID {event.get('claim_id')} successfully inserted into Redshift table."
+    )
+
 except Exception as e:
     print(f"❌ Failed to insert into Redshift: {e}")
     conn.rollback()
+
+    sns.publish(
+        TopicArn=sns_topic,
+        Subject="❌ Redshift Insert Failed",
+        Message=f"Claim ID {event.get('claim_id')} failed to insert.\nError: {str(e)}"
+    )
     raise
+
 finally:
     cur.close()
     conn.close()
