@@ -12,15 +12,26 @@ claim_id = os.environ.get("CLAIM_ID")
 if not claim_id:
     raise ValueError("CLAIM_ID environment variable not found.")
 
-# 2. Load cleaned claim from S3
+# 2. Search for matching claim file in S3
 s3 = boto3.client('s3')
 bucket = 'aicp-claims-data'
-key = f'processed/DQ-validated-claims-data/{claim_id}.json'
+prefix = 'processed/DQ-validated-claims-data/'
 
+matched_key = None
 try:
-    obj = s3.get_object(Bucket=bucket, Key=key)
+    response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+    for obj in response.get('Contents', []):
+        key = obj['Key']
+        if claim_id in key and key.endswith('.json'):
+            matched_key = key
+            break
+    if not matched_key:
+        raise FileNotFoundError(f"No matching claim file found in S3 for {claim_id}")
+    
+    obj = s3.get_object(Bucket=bucket, Key=matched_key)
     event = json.loads(obj['Body'].read().decode('utf-8'))
-    print(f"✅ Loaded claim from S3: {key}")
+    print(f"✅ Loaded claim file from S3: {matched_key}")
+
 except Exception as e:
     print(f"❌ Failed to load claim JSON from S3: {e}")
     raise
