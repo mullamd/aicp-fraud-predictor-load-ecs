@@ -1,4 +1,4 @@
-import os 
+import os  
 import json
 import boto3
 import psycopg2
@@ -12,7 +12,7 @@ claim_id = os.environ.get("CLAIM_ID")
 if not claim_id:
     raise ValueError("CLAIM_ID environment variable not found.")
 
-# 2. Search for matching claim file in S3
+# 2. Search for matching DQ-validated claim file in S3
 s3 = boto3.client('s3')
 bucket = 'aicp-claims-data'
 prefix = 'processed/DQ-validated-claims-data/'
@@ -36,13 +36,10 @@ except Exception as e:
     print(f"❌ Failed to load claim JSON from S3: {e}")
     raise
 
-# 3. Prepare SageMaker payload (with required key check)
+# 3. Prepare SageMaker payload
 required_keys = [
-    "claim_amount_requested",
-    "estimated_damage_cost",
-    "vehicle_year",
-    "days_since_policy_start",
-    "location_risk_score"
+    "claim_amount_requested", "estimated_damage_cost", "vehicle_year",
+    "days_since_policy_start", "location_risk_score"
 ]
 
 missing_keys = [k for k in required_keys if k not in event]
@@ -97,10 +94,10 @@ try:
             fraud_score, fraud_prediction, fraud_explanation,
             claim_to_damage_ratio, days_since_policy_start,
             previous_claims_count, location_risk_score, vehicle_age,
-            incident_time, processed_by
+            incident_time, processed_by, shap_features
         )
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """, (
         event.get("claim_id"),
         event.get("policy_number"),
@@ -127,7 +124,8 @@ try:
         event.get("location_risk_score"),
         event.get("vehicle_age"),
         event.get("incident_time"),
-        event.get("processed_by")
+        event.get("processed_by"),
+        ", ".join(result.get("shap_features", []))
     ))
     conn.commit()
     print("✅ Inserted fraud result into Redshift.")
