@@ -1,4 +1,4 @@
-import os
+import os 
 import json
 import boto3
 import psycopg2
@@ -36,18 +36,26 @@ except Exception as e:
     print(f"❌ Failed to load claim JSON from S3: {e}")
     raise
 
-# 3. Prepare SageMaker payload
-try:
-    sm_payload = {
-        "claim_amount": event["claim_amount_requested"],
-        "estimated_damage": event["estimated_damage_cost"],
-        "vehicle_year": event["vehicle_year"],
-        "days_since_policy_start": event["days_since_policy_start"],
-        "location_risk_score": event["location_risk_score"]
-    }
-except KeyError as e:
-    print(f"❌ Missing key in input event: {e}")
-    raise
+# 3. Prepare SageMaker payload (with required key check)
+required_keys = [
+    "claim_amount_requested",
+    "estimated_damage_cost",
+    "vehicle_year",
+    "days_since_policy_start",
+    "location_risk_score"
+]
+
+missing_keys = [k for k in required_keys if k not in event]
+if missing_keys:
+    raise KeyError(f"Missing required keys for SageMaker payload: {missing_keys}")
+
+sm_payload = {
+    "claim_amount": event["claim_amount_requested"],
+    "estimated_damage": event["estimated_damage_cost"],
+    "vehicle_year": event["vehicle_year"],
+    "days_since_policy_start": event["days_since_policy_start"],
+    "location_risk_score": event["location_risk_score"]
+}
 
 # 4. Call SageMaker endpoint
 try:
