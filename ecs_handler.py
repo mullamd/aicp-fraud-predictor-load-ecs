@@ -12,10 +12,10 @@ claim_id = os.environ.get("CLAIM_ID")
 if not claim_id:
     raise ValueError("CLAIM_ID environment variable not found.")
 
-# 2. Search for matching DQ-validated claim file in S3
+# 2. Search for matching FINAL ENRICHED claim file in S3
 s3 = boto3.client('s3')
 bucket = 'aicp-claims-data'
-prefix = 'processed/DQ-validated-claims-data/'
+prefix = 'processed/fraud-predicted-claims-data/'  # ✅ UPDATED HERE
 
 matched_key = None
 try:
@@ -30,13 +30,13 @@ try:
     
     obj = s3.get_object(Bucket=bucket, Key=matched_key)
     event = json.loads(obj['Body'].read().decode('utf-8'))
-    print(f"✅ Loaded claim file from S3: {matched_key}")
+    print(f"✅ Loaded enriched claim file from S3: {matched_key}")
 
 except Exception as e:
-    print(f"❌ Failed to load claim JSON from S3: {e}")
+    print(f"❌ Failed to load enriched claim JSON from S3: {e}")
     raise
 
-# 3. Prepare SageMaker payload
+# 3. Prepare Redshift insert payload
 required_keys = [
     "claim_amount_requested", "estimated_damage_cost", "vehicle_year",
     "days_since_policy_start", "location_risk_score"
@@ -44,31 +44,9 @@ required_keys = [
 
 missing_keys = [k for k in required_keys if k not in event]
 if missing_keys:
-    raise KeyError(f"Missing required keys for SageMaker payload: {missing_keys}")
+    raise KeyError(f"Missing required keys for Redshift payload: {missing_keys}")
 
-sm_payload = {
-    "claim_amount": event["claim_amount_requested"],
-    "estimated_damage": event["estimated_damage_cost"],
-    "vehicle_year": event["vehicle_year"],
-    "days_since_policy_start": event["days_since_policy_start"],
-    "location_risk_score": event["location_risk_score"]
-}
-
-# 4. Call SageMaker endpoint
-try:
-    sagemaker = boto3.client("sagemaker-runtime")
-    response = sagemaker.invoke_endpoint(
-        EndpointName="aicp-fraud-endpoint-1752473908",
-        ContentType="application/json",
-        Body=json.dumps(sm_payload)
-    )
-    result = json.loads(response["Body"].read().decode("utf-8"))
-    print("✅ SageMaker response received.")
-except Exception as e:
-    print(f"❌ SageMaker endpoint invocation failed: {e}")
-    raise
-
-# 5. Connect to Redshift
+# 4. Connect to Redshift
 try:
     conn = psycopg2.connect(
         dbname="aicp_insurance",
@@ -82,7 +60,7 @@ except Exception as e:
     print(f"❌ Redshift connection failed: {e}")
     raise
 
-# 6. Insert into Redshift
+# 5. Insert into Redshift
 try:
     cur.execute("""
         INSERT INTO public.claims_processed (
@@ -115,9 +93,9 @@ try:
         event.get("is_valid"),
         event.get("textract_status"),
         event.get("dq_validation_status"),
-        result.get("fraud_score"),
-        result.get("fraud_prediction"),
-        result.get("fraud_explanation"),
+        event.get("fraud_score"),
+        event.get("fraud_prediction"),
+        event.get("fraud_explanation"),
         event.get("claim_to_damage_ratio"),
         event.get("days_since_policy_start"),
         event.get("previous_claims_count"),
@@ -125,10 +103,10 @@ try:
         event.get("vehicle_age"),
         event.get("incident_time"),
         event.get("processed_by"),
-        ", ".join(result.get("shap_features", []))
+        ", ".join(event.get("shap_features", []))
     ))
     conn.commit()
-    print("✅ Inserted fraud result into Redshift.")
+    print("✅ Inserted final prediction into Redshift.")
 
     sns.publish(
         TopicArn=sns_topic,
