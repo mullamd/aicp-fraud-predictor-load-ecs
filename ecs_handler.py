@@ -7,17 +7,25 @@ import psycopg2
 sns = boto3.client('sns')
 sns_topic = 'arn:aws:sns:us-east-1:461512246753:aicp-redshift-status-topic'
 
-# 1. Read input from environment variable
+# 1. Read CLAIM_ID from environment
+claim_id = os.environ.get("CLAIM_ID")
+if not claim_id:
+    raise ValueError("CLAIM_ID environment variable not found.")
+
+# 2. Load cleaned claim from S3
+s3 = boto3.client('s3')
+bucket = 'aicp-claims-data'
+key = f'processed/DQ-validated-claims-data/{claim_id}.json'
+
 try:
-    payload = os.environ.get("CLAIM_PAYLOAD")
-    if not payload:
-        raise ValueError("CLAIM_PAYLOAD environment variable not found.")
-    event = json.loads(payload)
+    obj = s3.get_object(Bucket=bucket, Key=key)
+    event = json.loads(obj['Body'].read().decode('utf-8'))
+    print(f"✅ Loaded claim from S3: {key}")
 except Exception as e:
-    print(f"❌ Error loading CLAIM_PAYLOAD: {e}")
+    print(f"❌ Failed to load claim JSON from S3: {e}")
     raise
 
-# 2. Prepare SageMaker payload
+# 3. Prepare SageMaker payload
 try:
     sm_payload = {
         "claim_amount": event["claim_amount_requested"],
@@ -30,7 +38,7 @@ except KeyError as e:
     print(f"❌ Missing key in input event: {e}")
     raise
 
-# 3. Call SageMaker endpoint
+# 4. Call SageMaker endpoint
 try:
     sagemaker = boto3.client("sagemaker-runtime")
     response = sagemaker.invoke_endpoint(
@@ -39,11 +47,12 @@ try:
         Body=json.dumps(sm_payload)
     )
     result = json.loads(response["Body"].read().decode("utf-8"))
+    print("✅ SageMaker response received.")
 except Exception as e:
     print(f"❌ SageMaker endpoint invocation failed: {e}")
     raise
 
-# 4. Connect to Redshift
+# 5. Connect to Redshift
 try:
     conn = psycopg2.connect(
         dbname="aicp_insurance",
@@ -57,7 +66,7 @@ except Exception as e:
     print(f"❌ Redshift connection failed: {e}")
     raise
 
-# 5. Insert into Redshift
+# 6. Insert into Redshift
 try:
     cur.execute("""
         INSERT INTO public.claims_processed (
@@ -113,7 +122,6 @@ try:
 except Exception as e:
     print(f"❌ Failed to insert into Redshift: {e}")
     conn.rollback()
-
     sns.publish(
         TopicArn=sns_topic,
         Subject="❌ Redshift Insert Failed",
