@@ -1,4 +1,4 @@
-import os
+import os  
 import json
 import boto3
 import psycopg2
@@ -15,7 +15,7 @@ if not claim_id:
 # 2. Search for matching FINAL ENRICHED claim file in S3
 s3 = boto3.client('s3')
 bucket = 'aicp-claims-data'
-prefix = 'processed/fraud-predicted-claims-data/'  # ✅ FINAL ENRICHED LOCATION
+prefix = 'processed/fraud-predicted-claims-data/'  # ✅ UPDATED HERE
 
 matched_key = None
 try:
@@ -27,7 +27,7 @@ try:
             break
     if not matched_key:
         raise FileNotFoundError(f"No matching claim file found in S3 for {claim_id}")
-
+    
     obj = s3.get_object(Bucket=bucket, Key=matched_key)
     event = json.loads(obj['Body'].read().decode('utf-8'))
     print(f"✅ Loaded enriched claim file from S3: {matched_key}")
@@ -36,7 +36,7 @@ except Exception as e:
     print(f"❌ Failed to load enriched claim JSON from S3: {e}")
     raise
 
-# 3. Validate required prediction fields
+# 3. Prepare Redshift insert payload
 required_keys = [
     "claim_amount_requested", "estimated_damage_cost", "vehicle_year",
     "days_since_policy_start", "location_risk_score"
@@ -74,8 +74,8 @@ try:
             previous_claims_count, location_risk_score, vehicle_age,
             incident_time, processed_by, shap_features
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """, (
         event.get("claim_id"),
         event.get("policy_number"),
