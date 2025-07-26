@@ -6,6 +6,7 @@ on:
 
 jobs:
   build-and-deploy:
+    name: 🧠 Build & Deploy Redshift Loader
     runs-on: ubuntu-latest
 
     env:
@@ -15,6 +16,7 @@ jobs:
       SUBNET_ID: subnet-02c673bb70ede8519
       SECURITY_GROUP_ID: sg-0446ae2a3834b378e
       CONTAINER_NAME: aicp-fraud-predictor-load-container
+      CLAIM_ID: CLM-20240907-0022
 
     steps:
       - name: ✅ Checkout Code
@@ -37,42 +39,16 @@ jobs:
           docker build -t $ECR_REPO_URI .
           docker push $ECR_REPO_URI
 
-      - name: 🚀 Run ECS Task with Claim Payload
+      - name: 🚀 Run ECS Task with CLAIM_ID
         run: |
-          PAYLOAD=$(jq -n '{
-            claim_id: "CLM001",
-            policy_number: "PN1001",
-            claimant_name: "John Doe",
-            date_of_loss: "2025-07-01",
-            type_of_claim: "Collision",
-            accident_location: "New York, NY",
-            vehicle_make: "Toyota",
-            vehicle_model: "Camry",
-            vehicle_year: 2018,
-            license_plate: "XYZ123",
-            description_of_damage: "Front bumper damage",
-            estimated_damage_cost: 2000.0,
-            claim_amount_requested: 4800.0,
-            is_valid: true,
-            textract_status: "SUCCEEDED",
-            dq_validation_status: "PASS",
-            claim_to_damage_ratio: 2.4,
-            days_since_policy_start: 15,
-            previous_claims_count: 1,
-            location_risk_score: 3.7,
-            vehicle_age: 7,
-            incident_time: "08:00 AM",
-            processed_by: "ecs-auto"
-          }')
-
-          OVERRIDES=$(jq -n --arg payload "$PAYLOAD" --arg container "$CONTAINER_NAME" '{
+          OVERRIDES=$(jq -n --arg claim_id "${{ env.CLAIM_ID }}" --arg container "$CONTAINER_NAME" '{
             containerOverrides: [
               {
                 name: $container,
                 environment: [
                   {
-                    name: "CLAIM_PAYLOAD",
-                    value: $payload
+                    name: "CLAIM_ID",
+                    value: $claim_id
                   }
                 ]
               }
@@ -99,7 +75,7 @@ jobs:
           to: mm.cloudenginner@gmail.com
           from: ${{ secrets.EMAIL_USERNAME }}
           body: |
-            ✅ ECS task for fraud prediction + Redshift insertion completed successfully.
+            ✅ ECS task for fraud prediction + Redshift insertion completed successfully for claim ${{ env.CLAIM_ID }}.
 
       - name: 📧 Send failure email
         if: failure()
@@ -113,4 +89,4 @@ jobs:
           to: mm.cloudenginner@gmail.com
           from: ${{ secrets.EMAIL_USERNAME }}
           body: |
-            ❌ ECS task failed during build, push, or execution. Please check GitHub Actions logs.
+            ❌ ECS task failed during build, push, or execution for claim ${{ env.CLAIM_ID }}. Please check GitHub Actions logs.

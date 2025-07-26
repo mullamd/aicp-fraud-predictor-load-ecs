@@ -1,129 +1,89 @@
-import os  
+import os
 import json
 import boto3
 import psycopg2
+from datetime import datetime
 
-# 0. Setup SNS for Redshift monitoring
-sns = boto3.client('sns')
-sns_topic = 'arn:aws:sns:us-east-1:461512246753:aicp-redshift-status-topic'
+# --- Config --- #
+bucket = "aicp-claims-data"
+prefix = "processed/fraud-predicted-claims-data/"
+claim_id = os.environ.get("CLAIM_ID")  # Passed via ECS override or CLI
 
-# 1. Read CLAIM_ID from environment
-claim_id = os.environ.get("CLAIM_ID")
-if not claim_id:
-    raise ValueError("CLAIM_ID environment variable not found.")
+# Redshift connection
+redshift_host = "redshift-cluster-2.cax5lwhmspd1.us-east-1.redshift.amazonaws.com"
+redshift_user = "redshift_admin"
+redshift_pass = "347634M-ulla7710"
+redshift_db = "dev"
+redshift_port = 5439
 
-# 2. Search for matching FINAL ENRICHED claim file in S3
-s3 = boto3.client('s3')
-bucket = 'aicp-claims-data'
-prefix = 'processed/fraud-predicted-claims-data/'  # ✅ UPDATED HERE
-
+# --- Find Matching File in S3 --- #
+s3 = boto3.client("s3")
 matched_key = None
-try:
-    response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
-    for obj in response.get('Contents', []):
-        key = obj['Key']
-        if claim_id in key and key.endswith('.json'):
-            matched_key = key
-            break
-    if not matched_key:
-        raise FileNotFoundError(f"No matching claim file found in S3 for {claim_id}")
-    
-    obj = s3.get_object(Bucket=bucket, Key=matched_key)
-    event = json.loads(obj['Body'].read().decode('utf-8'))
-    print(f"✅ Loaded enriched claim file from S3: {matched_key}")
 
-except Exception as e:
-    print(f"❌ Failed to load enriched claim JSON from S3: {e}")
-    raise
+response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+for obj in response.get("Contents", []):
+    if claim_id in obj["Key"] and obj["Key"].endswith(".json"):
+        matched_key = obj["Key"]
+        break
 
-# 3. Prepare Redshift insert payload
-required_keys = [
-    "claim_amount_requested", "estimated_damage_cost", "vehicle_year",
-    "days_since_policy_start", "location_risk_score"
-]
+if not matched_key:
+    raise ValueError(f"❌ No fraud result found in S3 for claim ID: {claim_id}")
 
-missing_keys = [k for k in required_keys if k not in event]
-if missing_keys:
-    raise KeyError(f"Missing required keys for Redshift payload: {missing_keys}")
+# --- Load Fraud JSON --- #
+file_obj = s3.get_object(Bucket=bucket, Key=matched_key)
+content = file_obj["Body"].read().decode("utf-8")
+fraud_data = json.loads(content)
 
-# 4. Connect to Redshift
+# --- Connect to Redshift --- #
 try:
     conn = psycopg2.connect(
-        dbname="aicp_insurance",
-        host="redshift-cluster-2.cax5lwhmspd1.us-east-1.redshift.amazonaws.com",
-        port=5439,
-        user="redshift_admin",
-        password="347634M-ulla7710"
+        dbname=redshift_db,
+        host=redshift_host,
+        port=redshift_port,
+        user=redshift_user,
+        password=redshift_pass
     )
-    cur = conn.cursor()
+    cursor = conn.cursor()
 except Exception as e:
-    print(f"❌ Redshift connection failed: {e}")
-    raise
+    raise RuntimeError(f"❌ Failed to connect to Redshift: {e}")
 
-# 5. Insert into Redshift
-try:
-    cur.execute("""
-        INSERT INTO public.claims_processed (
-            claim_id, policy_number, claimant_name, date_of_loss,
-            type_of_claim, accident_location, vehicle_make, vehicle_model,
-            vehicle_year, license_plate, description_of_damage,
-            estimated_damage_cost, claim_amount_requested,
-            is_valid, textract_status, dq_validation_status,
-            fraud_score, fraud_prediction, fraud_explanation,
-            claim_to_damage_ratio, days_since_policy_start,
-            previous_claims_count, location_risk_score, vehicle_age,
-            incident_time, processed_by, shap_features
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """, (
-        event.get("claim_id"),
-        event.get("policy_number"),
-        event.get("claimant_name"),
-        event.get("date_of_loss"),
-        event.get("type_of_claim"),
-        event.get("accident_location"),
-        event.get("vehicle_make"),
-        event.get("vehicle_model"),
-        event.get("vehicle_year"),
-        event.get("license_plate"),
-        event.get("description_of_damage"),
-        event.get("estimated_damage_cost"),
-        event.get("claim_amount_requested"),
-        event.get("is_valid"),
-        event.get("textract_status"),
-        event.get("dq_validation_status"),
-        event.get("fraud_score"),
-        event.get("fraud_prediction"),
-        event.get("fraud_explanation"),
-        event.get("claim_to_damage_ratio"),
-        event.get("days_since_policy_start"),
-        event.get("previous_claims_count"),
-        event.get("location_risk_score"),
-        event.get("vehicle_age"),
-        event.get("incident_time"),
-        event.get("processed_by"),
-        ", ".join(event.get("shap_features", []))
-    ))
-    conn.commit()
-    print("✅ Inserted final prediction into Redshift.")
+# --- Insert into Redshift --- #
+sql = """
+INSERT INTO aicp_insurance.claims_processed (
+    claim_id,
+    fraud_prediction,
+    fraud_score,
+    fraud_explanation,
+    claim_to_damage_ratio,
+    vehicle_age,
+    previous_claims_count,
+    days_since_policy_start,
+    location_risk_score,
+    incident_time_hour,
+    inserted_at
+)
+VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+"""
 
-    sns.publish(
-        TopicArn=sns_topic,
-        Subject="✅ Redshift Insert Succeeded",
-        Message=f"Claim ID {event.get('claim_id')} successfully inserted into Redshift table."
-    )
+shap = fraud_data["shap_values"]
 
-except Exception as e:
-    print(f"❌ Failed to insert into Redshift: {e}")
-    conn.rollback()
-    sns.publish(
-        TopicArn=sns_topic,
-        Subject="❌ Redshift Insert Failed",
-        Message=f"Claim ID {event.get('claim_id')} failed to insert.\nError: {str(e)}"
-    )
-    raise
+cursor.execute(sql, (
+    fraud_data["claim_id"],
+    fraud_data["fraud_prediction"],
+    fraud_data["fraud_score"],
+    fraud_data["fraud_explanation"],
+    shap.get("claim_to_damage_ratio"),
+    shap.get("vehicle_age"),
+    shap.get("previous_claims_count"),
+    shap.get("days_since_policy_start"),
+    shap.get("location_risk_score"),
+    shap.get("incident_time_hour"),
+    datetime.utcnow()
+))
 
-finally:
-    cur.close()
-    conn.close()
+# --- Commit and Close --- #
+conn.commit()
+cursor.close()
+conn.close()
+
+print(f"✅ Inserted fraud result for {fraud_data['claim_id']} into Redshift.")

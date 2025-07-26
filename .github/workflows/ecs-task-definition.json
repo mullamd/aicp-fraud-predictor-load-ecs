@@ -14,11 +14,11 @@
       "environment": [
         {
           "name": "SAGEMAKER_ENDPOINT_NAME",
-          "value": "aicp-fraud-endpoint-1752473908"
+          "value": "aicp-fraud-endpoint-1753463323"
         },
         {
           "name": "REDSHIFT_TABLE",
-          "value": "auto_insurance_data.claims_processed"
+          "value": "aicp_insurance.claims_processed"
         }
       ],
       "logConfiguration": {
