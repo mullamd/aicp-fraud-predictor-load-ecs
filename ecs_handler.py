@@ -67,6 +67,7 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 """
 
 shap = fraud_data["shap_values"]
+claim_status = fraud_data.get("claim_status", "Manual Review")  # Fallback for safety
 
 cursor.execute(sql, (
     fraud_data["claim_id"],
@@ -79,8 +80,8 @@ cursor.execute(sql, (
     shap.get("days_since_policy_start"),
     shap.get("location_risk_score"),
     shap.get("incident_time_hour"),
-    fraud_data["claim_status"],     # ✅ New column
-    datetime.utcnow()               # inserted_at timestamp
+    claim_status,
+    datetime.utcnow()
 ))
 
 # --- Commit and Close --- #
@@ -88,4 +89,4 @@ conn.commit()
 cursor.close()
 conn.close()
 
-print(f"✅ Inserted fraud result for {fraud_data['claim_id']} into Redshift.")
+print(f" Inserted fraud result for {fraud_data['claim_id']} into Redshift.")
