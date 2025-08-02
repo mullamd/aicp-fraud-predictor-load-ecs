@@ -27,7 +27,7 @@ for obj in response.get("Contents", []):
         break
 
 if not matched_key:
-    raise ValueError(f"❌ No fraud result found in S3 for claim ID: {claim_id}")
+    raise ValueError(f" No fraud result found in S3 for claim ID: {claim_id}")
 
 # --- Load Fraud JSON --- #
 file_obj = s3.get_object(Bucket=bucket, Key=matched_key)
@@ -45,7 +45,7 @@ try:
     )
     cursor = conn.cursor()
 except Exception as e:
-    raise RuntimeError(f"❌ Failed to connect to Redshift: {e}")
+    raise RuntimeError(f" Failed to connect to Redshift: {e}")
 
 # --- Insert into Redshift --- #
 sql = """
@@ -60,9 +60,10 @@ INSERT INTO aicp_insurance.claims_processed (
     days_since_policy_start,
     location_risk_score,
     incident_time_hour,
+    claim_status,
     inserted_at
 )
-VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 """
 
 shap = fraud_data["shap_values"]
@@ -78,7 +79,8 @@ cursor.execute(sql, (
     shap.get("days_since_policy_start"),
     shap.get("location_risk_score"),
     shap.get("incident_time_hour"),
-    datetime.utcnow()
+    fraud_data["claim_status"],     # ✅ New column
+    datetime.utcnow()               # inserted_at timestamp
 ))
 
 # --- Commit and Close --- #
