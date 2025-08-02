@@ -27,12 +27,16 @@ for obj in response.get("Contents", []):
         break
 
 if not matched_key:
-    raise ValueError(f" No fraud result found in S3 for claim ID: {claim_id}")
+    raise ValueError(f"❌ No fraud result found in S3 for claim ID: {claim_id}")
 
 # --- Load Fraud JSON --- #
 file_obj = s3.get_object(Bucket=bucket, Key=matched_key)
 content = file_obj["Body"].read().decode("utf-8")
 fraud_data = json.loads(content)
+
+# --- Extract raw input features --- #
+raw = fraud_data.get("raw_features", {})
+claim_status = fraud_data.get("claim_status", "Manual Review")
 
 # --- Connect to Redshift --- #
 try:
@@ -45,9 +49,9 @@ try:
     )
     cursor = conn.cursor()
 except Exception as e:
-    raise RuntimeError(f" Failed to connect to Redshift: {e}")
+    raise RuntimeError(f"❌ Failed to connect to Redshift: {e}")
 
-# --- Insert into Redshift --- #
+# --- Insert into Redshift using raw_features --- #
 sql = """
 INSERT INTO aicp_insurance.claims_processed (
     claim_id,
@@ -66,20 +70,17 @@ INSERT INTO aicp_insurance.claims_processed (
 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 """
 
-shap = fraud_data["shap_values"]
-claim_status = fraud_data.get("claim_status", "Manual Review")  # Fallback for safety
-
 cursor.execute(sql, (
     fraud_data["claim_id"],
     fraud_data["fraud_prediction"],
     fraud_data["fraud_score"],
     fraud_data["fraud_explanation"],
-    shap.get("claim_to_damage_ratio"),
-    shap.get("vehicle_age"),
-    shap.get("previous_claims_count"),
-    shap.get("days_since_policy_start"),
-    shap.get("location_risk_score"),
-    shap.get("incident_time_hour"),
+    raw.get("claim_to_damage_ratio"),
+    raw.get("vehicle_age"),
+    raw.get("previous_claims_count"),
+    raw.get("days_since_policy_start"),
+    raw.get("location_risk_score"),
+    raw.get("incident_time_hour"),
     claim_status,
     datetime.utcnow()
 ))
@@ -89,4 +90,4 @@ conn.commit()
 cursor.close()
 conn.close()
 
-print(f" Inserted fraud result for {fraud_data['claim_id']} into Redshift.")
+print(f"✅ Inserted fraud result for {fraud_data['claim_id']} into Redshift.")
